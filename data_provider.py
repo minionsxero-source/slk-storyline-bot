@@ -69,8 +69,10 @@ def get_candles(symbol: str, timeframe: str, n: int = 300) -> pd.DataFrame:
     return df.tail(n).reset_index(drop=True)
 
 
-def get_candles_rate_limited(symbol: str, timeframe: str, n: int = 300, pause: float = 1.0) -> pd.DataFrame:
-    """Same as get_candles but sleeps briefly first - handy when looping over
-    many symbols back-to-back to stay under the free-tier rate limit."""
-    time.sleep(pause)
-    return get_candles(symbol, timeframe, n)
+   def get_candles_rate_limited(symbol: str, timeframe: str, n: int = 300, pause: float = 8.0) -> pd.DataFrame:
+       """Same as get_candles but sleeps first - required to stay under Twelve
+       Data's free-tier limit of 8 requests/minute (i.e. one request every 7.5s
+       minimum). 8s gives a small safety margin. With 3 calls/symbol this adds
+       ~24s per symbol, which is fine against a 15-minute scan interval."""
+       time.sleep(pause)
+       return get_candles(symbol, timeframe, n)

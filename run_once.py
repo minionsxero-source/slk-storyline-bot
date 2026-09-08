@@ -1,11 +1,10 @@
 """
-Single-pass version of main.py, designed to be triggered by a GitHub
-Actions cron schedule instead of an internal while-loop. Each run:
-  1. Scans every symbol once.
-  2. Applies the exact same weekly/daily storyline + alignment logic.
-  3. Sends Telegram alerts for anything newly confirmed.
-  4. Exits. state_store.py's JSON file is what makes de-duplication work
-     across separate runs (the workflow commits it back to the repo).
+SLK / Malaysian SNR scanner:
+  Rule 1 - daily-bias storyline (fresh level -> rejection -> H4 external breakout)
+  Rule 2 - daily candle sweeps prior day high/low -> H4 external breakout
+  Rule 2b - same sweep, but flagged extra if it overlaps both a weekly and
+            daily key level (confluence)
+Single pass, built for GitHub Actions cron.
 """
 
 import sys
@@ -18,32 +17,108 @@ import telegram_notifier
 import state_store
 
 
+def fmt_dt(ts):
+    return ts.strftime("%a %-d %b, %H:%M")
+
+
+def fmt_date(ts):
+    return ts.strftime("%-d %b %Y")
+
+
+def send_storyline_alert(daily_story):
+    is_bullish = daily_story.direction == "bullish"
+    side = "BUY" if is_bullish else "SELL"
+    emoji = "🟢" if is_bullish else "🔴"
+    clean_symbol = daily_story.symbol.replace("/", "")
+
+    msg = (
+        f"{emoji} {side} · {clean_symbol} · {daily_story.higher_tf}→{daily_story.lower_tf}\n"
+        f"External breakout confirmed\n\n"
+        f"Rejected key level @ {daily_story.rejection_price:.5f}; "
+        f"{daily_story.lower_tf} broke {daily_story.breakout_price:.5f} "
+        f"beyond the level that existed before the rejection.\n\n"
+        f"Broke {daily_story.breakout_price:.5f} · {fmt_dt(daily_story.breakout_time)}\n"
+        f"Rejected {fmt_dt(daily_story.rejection_time)}\n"
+        f"Key level {daily_story.rejection_price:.5f} · formed {fmt_date(daily_story.level_formed_time)}\n"
+        f"Trend aligned with {daily_story.higher_tf}\n\n"
+        f"⚠️ Not an entry signal. Bias only — wait for your entry model."
+    )
+    telegram_notifier.send_message(msg)
+
+
+def send_sweep_alert(sweep):
+    is_bullish = sweep.direction == "bullish"
+    side = "BUY" if is_bullish else "SELL"
+    emoji = "🟢" if is_bullish else "🔴"
+    clean_symbol = sweep.symbol.replace("/", "")
+    level_label = "prior day high" if sweep.sweep_type == "high" else "prior day low"
+
+    msg = (
+        f"{emoji} {side} · {clean_symbol} · Daily Sweep→H4\n"
+        f"Daily candle swept {level_label}, H4 gave an external breakout\n\n"
+        f"Swept {sweep.swept_level:.5f} ({level_label}) · {fmt_dt(sweep.sweep_time)}\n"
+        f"H4 Broke {sweep.breakout_price:.5f} · {fmt_dt(sweep.breakout_time)}\n\n"
+        f"⚠️ Not an entry signal. Bias only — wait for your entry model."
+    )
+    telegram_notifier.send_message(msg)
+
+
+def send_confluence_alert(sweep):
+    is_bullish = sweep.direction == "bullish"
+    side = "BUY" if is_bullish else "SELL"
+    emoji = "🟢" if is_bullish else "🔴"
+    clean_symbol = sweep.symbol.replace("/", "")
+
+    msg = (
+        f"{emoji} {side} · {clean_symbol} · Weekly+Daily Key Level Overlap\n"
+        f"This sweep sits on BOTH a weekly and a daily key level\n\n"
+        f"Weekly key level {sweep.weekly_level_price:.5f} · formed {fmt_date(sweep.weekly_level_time)}\n"
+        f"Daily key level {sweep.daily_level_price:.5f} · formed {fmt_date(sweep.daily_level_time)}\n"
+        f"Swept {sweep.swept_level:.5f} · {fmt_dt(sweep.sweep_time)}\n"
+        f"H4 Broke {sweep.breakout_price:.5f} · {fmt_dt(sweep.breakout_time)}\n\n"
+        f"⚠️ Not an entry signal. Bias only — wait for your entry model."
+    )
+    telegram_notifier.send_message(msg)
+
+
 def scan_symbol(symbol: str):
+    w1 = data_provider.get_candles_rate_limited(symbol, "W1", config.CANDLE_HISTORY["W1"])
     d1 = data_provider.get_candles_rate_limited(symbol, "D1", config.CANDLE_HISTORY["D1"])
     h4 = data_provider.get_candles_rate_limited(symbol, "H4", config.CANDLE_HISTORY["H4"])
 
+    # --- Rule 1: SLK storyline ---
     daily_story = storyline.evaluate_storyline(symbol, *config.DAILY_CHAIN, d1, h4)
-
-    if not daily_story.confirmed:
+    if daily_story.confirmed:
+        key = f"{symbol}:storyline:{daily_story.higher_tf}->{daily_story.lower_tf}"
+        if not state_store.already_alerted(key, daily_story.breakout_time):
+            send_storyline_alert(daily_story)
+            state_store.mark_alerted(key, daily_story.breakout_time)
+            print(f"[{symbol}] STORYLINE ALERT SENT: {daily_story.direction}")
+        else:
+            print(f"[{symbol}] storyline already alerted, skipping")
+    else:
         print(f"[{symbol}] no confirmed daily storyline yet")
-        return
 
-    key = f"{symbol}:{daily_story.higher_tf}->{daily_story.lower_tf}"
-    if state_store.already_alerted(key, daily_story.breakout_time):
-        print(f"[{symbol}] already alerted for this breakout, skipping")
-        return
+    # --- Rule 2 (+2b): daily sweep -> H4 breakout, with weekly/daily confluence flag ---
+    sweep = storyline.evaluate_daily_sweep_breakout(symbol, w1, d1, h4)
+    if sweep.confirmed:
+        key = f"{symbol}:sweep"
+        if not state_store.already_alerted(key, sweep.breakout_time):
+            send_sweep_alert(sweep)
+            state_store.mark_alerted(key, sweep.breakout_time)
+            print(f"[{symbol}] SWEEP ALERT SENT: {sweep.direction}")
 
-    direction_word = "BULLISH" if daily_story.direction == "bullish" else "BEARISH"
-    msg = (
-        f"<b>{symbol}</b> — {direction_word} STORYLINE CONFIRMED\n"
-        f"Daily fresh level rejected → 4H external breakout confirmed.\n"
-        f"Rejection: {daily_story.rejection_time}\n"
-        f"4H Breakout: {daily_story.breakout_time}\n\n"
-        f"⚠️ Storyline only — no entry given. Go refine it yourself on 1H/M5."
-    )
-    telegram_notifier.send_message(msg)
-    state_store.mark_alerted(key, daily_story.breakout_time)
-    print(f"[{symbol}] ALERT SENT: {direction_word} storyline confirmed (daily bias only)")
+            if sweep.confluence:
+                conf_key = f"{symbol}:confluence"
+                if not state_store.already_alerted(conf_key, sweep.breakout_time):
+                    send_confluence_alert(sweep)
+                    state_store.mark_alerted(conf_key, sweep.breakout_time)
+                    print(f"[{symbol}] CONFLUENCE ALERT SENT: {sweep.direction}")
+        else:
+            print(f"[{symbol}] sweep already alerted, skipping")
+    else:
+        print(f"[{symbol}] no confirmed daily sweep+breakout yet")
+
 
 def main():
     had_error = False

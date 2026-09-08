@@ -19,20 +19,13 @@ import state_store
 
 
 def scan_symbol(symbol: str):
-    w1 = data_provider.get_candles_rate_limited(symbol, "W1", config.CANDLE_HISTORY["W1"])
     d1 = data_provider.get_candles_rate_limited(symbol, "D1", config.CANDLE_HISTORY["D1"])
     h4 = data_provider.get_candles_rate_limited(symbol, "H4", config.CANDLE_HISTORY["H4"])
 
-    weekly_story = storyline.evaluate_storyline(symbol, *config.WEEKLY_CHAIN, w1, d1)
     daily_story = storyline.evaluate_storyline(symbol, *config.DAILY_CHAIN, d1, h4)
 
     if not daily_story.confirmed:
         print(f"[{symbol}] no confirmed daily storyline yet")
-        return
-
-    if weekly_story.direction is None or weekly_story.direction != daily_story.direction:
-        print(f"[{symbol}] daily storyline confirmed ({daily_story.direction}) "
-              f"but weekly is {weekly_story.direction} -> NOT aligned, skipped")
         return
 
     key = f"{symbol}:{daily_story.higher_tf}->{daily_story.lower_tf}"
@@ -43,7 +36,6 @@ def scan_symbol(symbol: str):
     direction_word = "BULLISH" if daily_story.direction == "bullish" else "BEARISH"
     msg = (
         f"<b>{symbol}</b> — {direction_word} STORYLINE CONFIRMED\n"
-        f"Weekly bias: {weekly_story.direction} (aligned ✅)\n"
         f"Daily fresh level rejected → 4H external breakout confirmed.\n"
         f"Rejection: {daily_story.rejection_time}\n"
         f"4H Breakout: {daily_story.breakout_time}\n\n"
@@ -51,8 +43,7 @@ def scan_symbol(symbol: str):
     )
     telegram_notifier.send_message(msg)
     state_store.mark_alerted(key, daily_story.breakout_time)
-    print(f"[{symbol}] ALERT SENT: {direction_word} storyline confirmed & TF-aligned")
-
+    print(f"[{symbol}] ALERT SENT: {direction_word} storyline confirmed (daily bias only)")
 
 def main():
     had_error = False

@@ -1,21 +1,5 @@
 """
 Free, cloud-friendly OHLC data provider using Twelve Data's REST API.
-
-Why swap out MetaTrader5?
-  The MetaTrader5 python package only works by talking to a RUNNING MT5
-  terminal on the same (Windows) machine - that's a "system" you'd have
-  to keep online 24/7. This module instead pulls closed candles over
-  plain HTTPS, so it can run from any free Linux runner (including
-  GitHub Actions) with nothing kept running in the background.
-
-  Since the storyline logic only reasons about CLOSED W1/D1/H4 candles
-  (never live ticks or execution), a solid retail data feed is
-  functionally equivalent to IC Markets' own candles for structure
-  purposes - swing highs/lows, BOS, and breakouts will match almost
-  every time.
-
-Docs: https://twelvedata.com/docs
-Free tier: 800 requests/day, 8 requests/minute.
 """
 
 import time
@@ -33,8 +17,9 @@ INTERVAL_MAP = {
 BASE_URL = "https://api.twelvedata.com/time_series"
 
 
-def get_candles(symbol: str, timeframe: str, n: int = 300) -> pd.DataFrame:
-    """Return the n most recent CLOSED candles for symbol/timeframe, oldest first."""
+def get_candles(symbol: str, timeframe: str, n: int = 300, retries: int = 2) -> pd.DataFrame:
+    """Return the n most recent CLOSED candles for symbol/timeframe, oldest first.
+    Retries once on transient network errors (timeouts, connection resets)."""
     interval = INTERVAL_MAP[timeframe]
     params = {
         "symbol": symbol,
@@ -43,25 +28,35 @@ def get_candles(symbol: str, timeframe: str, n: int = 300) -> pd.DataFrame:
         "apikey": config.TWELVEDATA_API_KEY,
         "order": "ASC",
     }
-    resp = requests.get(BASE_URL, params=params, timeout=20)
-    resp.raise_for_status()
-    data = resp.json()
 
-    if data.get("status") == "error":
-        raise RuntimeError(f"Twelve Data error for {symbol} {timeframe}: {data.get('message')}")
+    last_error = None
+    for attempt in range(retries + 1):
+        try:
+            resp = requests.get(BASE_URL, params=params, timeout=30)
+            resp.raise_for_status()
+            data = resp.json()
 
-    values = data.get("values")
-    if not values:
-        raise RuntimeError(f"No data returned for {symbol} {timeframe}")
+            if data.get("status") == "error":
+                raise RuntimeError(f"Twelve Data error for {symbol} {timeframe}: {data.get('message')}")
 
-    df = pd.DataFrame(values)
-    df["time"] = pd.to_datetime(df["datetime"])
-    for col in ("open", "high", "low", "close"):
-        df[col] = df[col].astype(float)
-    df = df[["time", "open", "high", "low", "close"]].sort_values("time").reset_index(drop=True)
+            values = data.get("values")
+            if not values:
+                raise RuntimeError(f"No data returned for {symbol} {timeframe}")
 
-    df = df.iloc[:-1].reset_index(drop=True)
-    return df.tail(n).reset_index(drop=True)
+            df = pd.DataFrame(values)
+            df["time"] = pd.to_datetime(df["datetime"])
+            for col in ("open", "high", "low", "close"):
+                df[col] = df[col].astype(float)
+            df = df[["time", "open", "high", "low", "close"]].sort_values("time").reset_index(drop=True)
+            df = df.iloc[:-1].reset_index(drop=True)
+            return df.tail(n).reset_index(drop=True)
+
+        except (requests.exceptions.RequestException, RuntimeError) as e:
+            last_error = e
+            if attempt < retries:
+                time.sleep(5)  # brief pause before retrying
+                continue
+            raise last_error
 
 
 def get_candles_rate_limited(symbol: str, timeframe: str, n: int = 300, pause: float = 8.0) -> pd.DataFrame:

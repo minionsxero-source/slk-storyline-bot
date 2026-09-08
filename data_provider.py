@@ -12,12 +12,10 @@ Why swap out MetaTrader5?
   (never live ticks or execution), a solid retail data feed is
   functionally equivalent to IC Markets' own candles for structure
   purposes - swing highs/lows, BOS, and breakouts will match almost
-  every time. If you need literal IC Markets tick-for-tick data, see the
-  README section on running this against MT5 on a broker VPS instead.
+  every time.
 
 Docs: https://twelvedata.com/docs
-Free tier: 800 requests/day, 8 requests/minute - plenty for a handful
-of symbols scanned every 15-60 minutes.
+Free tier: 800 requests/day, 8 requests/minute.
 """
 
 import time
@@ -62,17 +60,13 @@ def get_candles(symbol: str, timeframe: str, n: int = 300) -> pd.DataFrame:
         df[col] = df[col].astype(float)
     df = df[["time", "open", "high", "low", "close"]].sort_values("time").reset_index(drop=True)
 
-    # Drop the last row defensively in case it's a still-forming candle
-    # (Twelve Data usually only returns closed bars for D1/W1/H4, but this
-    # keeps behaviour consistent with the MT5 provider).
     df = df.iloc[:-1].reset_index(drop=True)
     return df.tail(n).reset_index(drop=True)
 
 
-   def get_candles_rate_limited(symbol: str, timeframe: str, n: int = 300, pause: float = 8.0) -> pd.DataFrame:
-       """Same as get_candles but sleeps first - required to stay under Twelve
-       Data's free-tier limit of 8 requests/minute (i.e. one request every 7.5s
-       minimum). 8s gives a small safety margin. With 3 calls/symbol this adds
-       ~24s per symbol, which is fine against a 15-minute scan interval."""
-       time.sleep(pause)
-       return get_candles(symbol, timeframe, n)
+def get_candles_rate_limited(symbol: str, timeframe: str, n: int = 300, pause: float = 8.0) -> pd.DataFrame:
+    """Same as get_candles but sleeps first - required to stay under Twelve
+    Data's free-tier limit of 8 requests/minute (one request every 7.5s
+    minimum). 8s gives a small safety margin."""
+    time.sleep(pause)
+    return get_candles(symbol, timeframe, n)

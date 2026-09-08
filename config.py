@@ -29,16 +29,28 @@ MT5_PATH = os.getenv("MT5_PATH", "")  # optional, full path to terminal64.exe
 # route them through a different free source.
 # ---------------------------------------------------------------------------
 SYMBOLS = [
+    # Metals & Crypto
     "XAU/USD",
-    "EUR/USD",
-    "USD/CAD",
-    "EUR/AUD",
-    "USD/JPY",
-    "BTC/USDT",
-    "AUD/USD",
-    "GBP/JPY",
-    "EUR/JPY",
-    "EUR/NZD",
+    "BTC/USD",
+
+    # Majors
+    "EUR/USD", "GBP/USD", "USD/JPY", "USD/CHF", "USD/CAD", "AUD/USD", "NZD/USD",
+
+    # EUR crosses
+    "EUR/GBP", "EUR/JPY", "EUR/CHF", "EUR/AUD", "EUR/CAD", "EUR/NZD",
+
+    # GBP crosses
+    "GBP/JPY", "GBP/CHF", "GBP/AUD", "GBP/CAD", "GBP/NZD",
+
+    # AUD crosses
+    "AUD/JPY", "AUD/CHF", "AUD/CAD", "AUD/NZD",
+
+    # NZD crosses
+    "NZD/JPY", "NZD/CHF", "NZD/CAD",
+
+    # CAD/CHF crosses
+    "CAD/JPY", "CAD/CHF",
+    "CHF/JPY",
 ]
 
 # ---------------------------------------------------------------------------

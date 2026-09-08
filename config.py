@@ -31,10 +31,14 @@ MT5_PATH = os.getenv("MT5_PATH", "")  # optional, full path to terminal64.exe
 SYMBOLS = [
     "XAU/USD",
     "EUR/USD",
-    "GBP/USD",
-    "USD/JPY",
     "USD/CAD",
+    "EUR/AUD",
+    "USD/JPY",
+    "BTC/USDT",
+    "AUD/USD",
     "GBP/JPY",
+    "EUR/JPY",
+    "EUR/NZD",
 ]
 
 # ---------------------------------------------------------------------------

@@ -69,7 +69,9 @@ CANDLE_HISTORY = {
 
 # Fractal swing lookback: how many candles on each side confirm a swing point.
 SWING_LOOKBACK = 2
-
+# How close two levels' prices must be (as a % of price) to count as
+# "overlapping" for the weekly/daily confluence check.
+CONFLUENCE_TOLERANCE_PCT = 0.15
 # How often to rescan (seconds). 15 min is a sane default for W1/D1/H4 work.
 SCAN_INTERVAL_SECONDS = 15 * 60
 

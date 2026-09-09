@@ -2,7 +2,7 @@ name: SLK Storyline Scan
 
 on:
   schedule:
-    - cron: "35 2,6,10,14,18,22 * * *" 
+    - cron: "33 21,1,5,9,13,17 * * *" 
   workflow_dispatch: {}
 
 permissions:

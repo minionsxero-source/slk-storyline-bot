@@ -1,8 +1,10 @@
 name: SLK Storyline Scan
 
 on:
+  # Run 7 minutes after each 4-hour candle close so H4-confirmed events are
+  # picked up shortly after the candle is closed.
   schedule:
-    - cron: "33 21,1,5,9,13,17 * * *" 
+    - cron: "7 0,4,8,12,16,20 * * *"
   workflow_dispatch: {}
 
 permissions:
